@@ -5,7 +5,16 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.coerce.number().default(4000),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-  CLIENT_URL: z.string().min(1).default("http://localhost:5173"),
+  // Trailing slashes are a very easy copy-paste mistake (Vercel/Render
+  // dashboards, browser address bars) and CORS origin matching is
+  // byte-exact, so a stray "/" here silently breaks every cross-origin
+  // request. Normalize it away rather than relying on every deploy getting
+  // the value exactly right.
+  CLIENT_URL: z
+    .string()
+    .min(1)
+    .default("http://localhost:5173")
+    .transform((url) => url.replace(/\/+$/, "")),
   JWT_SECRET: z.string().min(16, "JWT_SECRET must be at least 16 characters"),
   JWT_EXPIRES_IN: z.string().default("7d"),
   ENCRYPTION_KEY: z
