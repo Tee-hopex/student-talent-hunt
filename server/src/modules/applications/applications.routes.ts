@@ -183,6 +183,14 @@ applicationsRouter.get(
         where: { categoryId: application.categoryId, judge: { userId: req.user!.sub } },
       });
       if (!assigned) throw forbidden();
+
+      // Judges need enough to identify and score a contestant, not the
+      // guardian's contact details or the student's date of birth —
+      // least-privilege at the API layer, not just in what the UI happens
+      // to render.
+      const { fullName, school, studentClass } = application.student;
+      res.json({ ...application, student: { fullName, school, studentClass } });
+      return;
     }
 
     res.json(application);
