@@ -1,0 +1,329 @@
+// Student Talent Hunt — database schema
+// Postgres via Supabase (DATABASE_URL = direct session connection string)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  JUDGE
+  STUDENT
+}
+
+enum StudentClass {
+  JSS3
+  SS3
+}
+
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum MediaType {
+  PHOTO
+  VIDEO
+}
+
+enum PostType {
+  NEWS
+  ANNOUNCEMENT
+  DEADLINE_REMINDER
+}
+
+enum DocumentAction {
+  VIEW_ID
+  DOWNLOAD_ID
+  VIEW_CONSENT
+  DOWNLOAD_CONSENT
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Auth / identity
+// ─────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         Role
+  name         String
+  phone        String?
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  student Student?
+  judge   Judge?
+
+  authoredPosts   BlogPost[]      @relation("PostAuthor")
+  reviewedApps    Application[]   @relation("ApplicationReviewer")
+  accessLogs      AccessLog[]     @relation("AccessLogActor")
+  notifications   Notification[]
+
+  @@map("users")
+}
+
+model Student {
+  id             String       @id @default(cuid())
+  userId         String       @unique
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName       String
+  school         String
+  studentClass   StudentClass
+  dateOfBirth    DateTime
+  guardianName   String
+  guardianPhone  String
+  guardianEmail  String?
+  address        String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  applications Application[]
+
+  @@map("students")
+}
+
+model Judge {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  categories JudgeCategory[]
+  scores     Score[]
+
+  @@map("judges")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Event structure
+// ─────────────────────────────────────────────────────────────────────────
+
+model Event {
+  id                     String      @id @default(cuid())
+  title                  String
+  slug                   String      @unique
+  description            String
+  location               String
+  status                 EventStatus @default(DRAFT)
+  registrationOpensAt    DateTime
+  registrationClosesAt   DateTime
+  competitionStartsAt    DateTime
+  competitionEndsAt      DateTime
+  resultsPublishedAt     DateTime?
+  votingOpensAt          DateTime?
+  firstPrize             String?
+  secondPrize            String?
+  thirdPrize             String?
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+
+  categories   Category[]
+  applications Application[]
+  galleryItems GalleryItem[]
+
+  @@map("events")
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  maxScore    Int      @default(100)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  applications Application[]
+  judges       JudgeCategory[]
+  votes        Vote[]
+
+  @@unique([eventId, name])
+  @@map("categories")
+}
+
+model JudgeCategory {
+  id         String   @id @default(cuid())
+  judgeId    String
+  judge      Judge    @relation(fields: [judgeId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  assignedAt DateTime @default(now())
+
+  @@unique([judgeId, categoryId])
+  @@map("judge_categories")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Applications (registration submissions)
+// ─────────────────────────────────────────────────────────────────────────
+
+model Application {
+  id         String            @id @default(cuid())
+  studentId  String
+  student    Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  eventId    String
+  event      Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  status     ApplicationStatus @default(PENDING)
+
+  rejectionReason String?
+
+  photoUrl String?
+  videoUrl String?
+
+  // Sensitive documents — stored encrypted on disk, path only resolvable
+  // through the authenticated /api/documents route (admin-only + logged).
+  governmentIdType    String?
+  governmentIdUrl     String?
+  parentalConsentUrl  String?
+
+  submittedAt DateTime  @default(now())
+  reviewedAt  DateTime?
+  reviewedBy  String?
+  reviewer    User?     @relation("ApplicationReviewer", fields: [reviewedBy], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  scores      Score[]
+  votes       Vote[]
+  accessLogs  AccessLog[]
+
+  @@unique([studentId, eventId])
+  @@index([eventId, categoryId, status])
+  @@map("applications")
+}
+
+model Score {
+  id            String   @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  judgeId       String
+  judge         Judge    @relation(fields: [judgeId], references: [id], onDelete: Cascade)
+  score         Float
+  comment       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([applicationId, judgeId])
+  @@map("scores")
+}
+
+model Vote {
+  id            String   @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  categoryId    String
+  category      Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  voterHash     String   // hash of (device fingerprint + IP + categoryId) — dedup key
+  ipHash        String   // hashed IP, kept separately for basic rate-limit/audit use
+  createdAt     DateTime @default(now())
+
+  @@unique([voterHash, categoryId])
+  @@index([categoryId])
+  @@map("votes")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Content
+// ─────────────────────────────────────────────────────────────────────────
+
+model BlogPost {
+  id            String    @id @default(cuid())
+  title         String
+  slug          String    @unique
+  excerpt       String?
+  content       String
+  coverImageUrl String?
+  type          PostType  @default(NEWS)
+  isPublished   Boolean   @default(false)
+  publishedAt   DateTime?
+  authorId      String
+  author        User      @relation("PostAuthor", fields: [authorId], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("blog_posts")
+}
+
+model GalleryItem {
+  id           String    @id @default(cuid())
+  eventId      String?
+  event        Event?    @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  title        String?
+  mediaType    MediaType
+  url          String
+  thumbnailUrl String?
+  isFeatured   Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+
+  @@map("gallery_items")
+}
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  subject   String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("contact_messages")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Ops / audit
+// ─────────────────────────────────────────────────────────────────────────
+
+model AccessLog {
+  id            String         @id @default(cuid())
+  actorId       String
+  actor         User           @relation("AccessLogActor", fields: [actorId], references: [id])
+  applicationId String
+  application   Application    @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  action        DocumentAction
+  ipAddress     String
+  createdAt     DateTime       @default(now())
+
+  @@index([applicationId])
+  @@map("access_logs")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}

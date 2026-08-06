@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+uploads/
+server/uploads/
+server/prisma/dev.db
+coverage/
+.vscode/*
+!.vscode/extensions.json
+.claude/

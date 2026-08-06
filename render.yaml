@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: student-talent-hunt-api
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build --workspace=server
+    startCommand: npm start --workspace=server
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: CLIENT_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: TURNSTILE_SECRET_KEY
+        sync: false
+      - key: UPLOAD_DIR
+        value: uploads
+      - key: MAX_UPLOAD_MB
+        value: "50"
+
+# Notes for whoever sets this up in the Render dashboard:
+# - Runs from the repo root using npm workspaces (npm run build/start
+#   --workspace=server) rather than Render's `rootDir` option, so it
+#   matches exactly how the project is run locally.
+# - "sync: false" vars have no value here on purpose — set them in the
+#   Render dashboard (Environment tab) instead of committing secrets.
+# - Don't set PORT — Render injects it automatically and the app already
+#   reads process.env.PORT.
+# - Free web services have an EPHEMERAL filesystem: anything written to
+#   /uploads (photos, government IDs, consent forms, gallery images) is
+#   lost on every redeploy or restart. Fine for a demo; before this goes
+#   anywhere near real users, swap the StorageAdapter for an S3-compatible
+#   one (server/src/storage/) or add a Render persistent disk.
